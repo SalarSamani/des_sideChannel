@@ -1,9 +1,9 @@
 #!/bin/bash
 # Copy all files from ~/task1 on hwsec-cw to the current local directory
 
-echo "[INFO] Copying files from hwsec-cw:~/task1 to $(pwd)..."
+echo "[INFO] Copying files ..."
 
-scp -r hwsec-cw:~/week1/task1/* .
+scp -r hwsec-cw:~/week1/task2/trace_difference.png .
 
 if [ $? -eq 0 ]; then
     echo "[INFO] ✅ Files successfully copied!"
