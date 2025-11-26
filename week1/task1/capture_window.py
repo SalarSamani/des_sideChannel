@@ -38,7 +38,7 @@ def capture_window(offset, samples, plaintext):
 
     # --- ADC setup ---
     scope.adc.samples = samples
-    scope.adc.decimate = 10        # as requested
+    scope.adc.decimate = 1        # as requested
     scope.adc.offset = offset
     scope.adc.presamples = 0
     scope.adc.timeout = 2

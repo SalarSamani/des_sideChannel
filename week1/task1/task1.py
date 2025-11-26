@@ -63,15 +63,16 @@ def capture_step(samples, decimate, offset, plaintext, step_idx):
     plt.xlabel("Sample index (this step)")
     plt.ylabel("Power (ADC units)")
 
-    # ticks every 1000 samples (per step, this is fine)
+    # ticks every ~len/20 samples, and rotate labels 45 degrees
     step_tick = max(1, len(trace) // 20)   # about ~20 ticks max
-    plt.xticks(np.arange(0, len(trace)+1, step_tick))
+    tick_positions = np.arange(0, len(trace) + 1, step_tick)
+    plt.xticks(tick_positions, rotation=45)
+
     plt.grid(alpha=0.3)
     plt.tight_layout()
     plt.savefig(f"trace_step{step_idx}.png", dpi=300)
     plt.close()
     print(f"  Saved step {step_idx} plot to trace_step{step_idx}.png")
-
     return trace
 
 def main():
@@ -81,8 +82,8 @@ def main():
     pt = b"HWSEC_25"
 
     SAMPLES = 24400
-    DECIMATE = 4
-    N_STEPS = 10
+    DECIMATE = 2
+    N_STEPS = 8
     OFFSET_STEP = SAMPLES * DECIMATE  # real-time distance between step windows
 
     all_traces = []
@@ -106,7 +107,7 @@ def main():
     np.save("trace_steps_combined.npy", combined_trace)
     print("[INFO] Saved combined raw data to trace_steps_combined.npy")
 
-    # ---- combined PNG (all data, just nicer ticks) ----
+    # ---- combined PNG (all data, rotated labels) ----
     plt.figure(figsize=(14, 4))
     x = np.arange(len(combined_trace))
     plt.plot(x, combined_trace, linewidth=0.6)
@@ -118,7 +119,8 @@ def main():
     # choose tick spacing so labels don't overlap but still fairly dense
     max_ticks = 20  # ~max number of labels
     tick_interval = max(1, len(combined_trace) // max_ticks)
-    plt.xticks(np.arange(0, len(combined_trace)+1, tick_interval))
+    tick_positions = np.arange(0, len(combined_trace) + 1, tick_interval)
+    plt.xticks(tick_positions, rotation=45)
 
     plt.grid(alpha=0.3)
     plt.tight_layout()
@@ -128,4 +130,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
