@@ -270,19 +270,36 @@ def main():
 
     # print top 5 candidates for each S-box
     print("\n=== CPA top 5 keys per S-box ===")
+    candidates_hex = []   # for sboux_out.txt
+
     for sbox_num in range(1, 9):
         sbox_results = all_results.get(sbox_num, [])
         print(f"\nS-box {sbox_num}:")
         if not sbox_results:
             print("  No valid results.")
+            candidates_hex.append([])  # keep indexing consistent
             continue
 
         top5 = sbox_results[:5]
+        row_hex = []
         for rank, (key, max_corr, idx) in enumerate(top5, start=1):
             original_sample = OFFSET + idx * DECIMATE
             print(f"  #{rank}: key=0x{key:02X} (dec={key:2d}), "
                   f"max_abs_corr={max_corr:.6f}, "
                   f"sample={idx} (original ≈ {original_sample})")
+            row_hex.append(f"0x{key:02X}")
+        candidates_hex.append(row_hex)
+
+    # ----- NEW PART: write Python array of candidates to sbox_out.txt -----
+    out_filename = "sbox_out.txt"
+    with open(out_filename, "w") as f:
+        f.write("CANDIDATES_HEX = [\n")
+        for row in candidates_hex:
+            # format like ["0x27", "0x2C", ...]
+            row_str = ", ".join(f'"{x}"' for x in row)
+            f.write(f"    [{row_str}],\n")
+        f.write("]\n")
+    print(f"\n[INFO] Written S-box key candidates to {out_filename}")
 
     # cleanup
     scope.dis()

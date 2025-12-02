@@ -4,6 +4,7 @@
 echo "[INFO] Copying files ..."
 
 scp -r hwsec-cw:~/week1/task5/*.py .
+scp -r hwsec-cw:~/week1/task5/*.txt .
 
 if [ $? -eq 0 ]; then
     echo "[INFO] ✅ Files successfully copied!"
